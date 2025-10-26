@@ -211,24 +211,47 @@ def extract_branches(
     local = local_name(elem.tag)
     branches: List[SchemaDict] = []
     edges: List[SchemaDict] = []
-    if local != "choice":
+
+    if local == "choice":
+        for child in elem:
+            child_local = local_name(child.tag)
+            if child_local == "when":
+                condition = child.attrib.get("expression") or child.attrib.get("condition")
+                targets = collect_branch_targets(child, lookup)
+                branch: SchemaDict = {"when": condition, "targets": targets}
+                branches.append(branch)
+                for target in targets:
+                    edges.append({"to": target, "via": "choice.when"})
+            elif child_local == "otherwise":
+                targets = collect_branch_targets(child, lookup)
+                branch = {"otherwise": True, "targets": targets}
+                branches.append(branch)
+                for target in targets:
+                    edges.append({"to": target, "via": "choice.otherwise"})
         return branches, edges
 
-    for child in elem:
-        child_local = local_name(child.tag)
-        if child_local == "when":
-            condition = child.attrib.get("expression") or child.attrib.get("condition")
+    if local in {"scatter-gather", "first-successful"}:
+        via = local
+        for child in elem:
+            if local_name(child.tag) != "route":
+                continue
             targets = collect_branch_targets(child, lookup)
-            branch: SchemaDict = {"when": condition, "targets": targets}
-            branches.append(branch)
+            if not targets:
+                continue
+            branches.append({"targets": targets})
             for target in targets:
-                edges.append({"to": target, "via": "choice.when"})
-        elif child_local == "otherwise":
-            targets = collect_branch_targets(child, lookup)
-            branch = {"otherwise": True, "targets": targets}
-            branches.append(branch)
+                edges.append({"to": target, "via": via})
+        return branches, edges
+
+    if local in {"foreach", "parallel-foreach"}:
+        via = "parallel-foreach" if local == "parallel-foreach" else "foreach"
+        targets = collect_branch_targets(elem, lookup)
+        if targets:
+            branches.append({"targets": targets})
             for target in targets:
-                edges.append({"to": target, "via": "choice.otherwise"})
+                edges.append({"to": target, "via": via})
+        return branches, edges
+
     return branches, edges
 
 
