@@ -50,11 +50,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         analysis = parse_mule_file(args.mule_file)
     except FileNotFoundError:
-        parser.error(f"The file '{args.mule_file}' does not exist.")
-    except (ET.ParseError, ValueError) as exc:
-        parser.error(
-            f"Could not parse Mule configuration '{args.mule_file}': {exc}"
+        sys.stderr.write(
+            f"Error: The file '{args.mule_file}' does not exist.\n"
         )
+        return 1
+    except (ET.ParseError, ValueError) as exc:
+        sys.stderr.write(
+            "Error: Could not parse Mule configuration "
+            f"'{args.mule_file}': {exc}\n"
+        )
+        return 1
 
     print(format_analysis(analysis))
     return 0
