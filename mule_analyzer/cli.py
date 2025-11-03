@@ -10,7 +10,6 @@ from .parser import parse_mule_file
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Create and return the CLI argument parser."""
     parser = argparse.ArgumentParser(
         description="Parse a Mule XML file and emit the graph JSON schema representation.",
     )
@@ -40,7 +39,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def determine_output_path(input_path: Path, explicit: Optional[str]) -> Path:
-    """Resolve the destination JSON path based on CLI inputs."""
     if explicit:
         return Path(explicit)
     if input_path.suffix:
@@ -49,7 +47,6 @@ def determine_output_path(input_path: Path, explicit: Optional[str]) -> Path:
 
 
 def dump_json(document: dict, destination: Path, *, pretty: bool) -> None:
-    """Write *document* as JSON to *destination*, optionally pretty printed."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("w", encoding="utf-8") as handle:
         if pretty:
@@ -60,7 +57,6 @@ def dump_json(document: dict, destination: Path, *, pretty: bool) -> None:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    """Run the CLI entry point with optional argument vector *argv*."""
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -68,16 +64,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not input_path.exists():
         parser.error(f"Input file '{input_path}' does not exist.")
 
-    try:
-        document = parse_mule_file(
-            str(input_path),
-            project=args.project,
-            schema_version=args.schema_version,
-        )
-    except ValueError as exc:
-        parser.error(
-            f"Could not parse Mule configuration '{input_path}': {exc}"
-        )
+    document = parse_mule_file(
+        str(input_path),
+        project=args.project,
+        schema_version=args.schema_version,
+    )
 
     output_path = determine_output_path(input_path, args.out)
     dump_json(document, output_path, pretty=args.pretty)

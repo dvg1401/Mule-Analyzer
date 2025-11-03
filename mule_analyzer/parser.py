@@ -20,14 +20,12 @@ class NodeLookup:
     assumptions: List[str]
 
     def resolve(self, name: str) -> Optional[str]:
-        """Return the canonical node identifier for *name* or record an assumption."""
-
         if name in self.flows:
             return self.flows[name]
         if name in self.subflows:
             return self.subflows[name]
         self.assumptions.append(f"Reference to unknown flow or subflow '{name}'")
-        # Assume the reference points to a flow to keep the graph connected.
+        # assume flow by default for stability
         return f"flow://{name}"
 
 
@@ -38,7 +36,7 @@ class ProcessorParseResult:
 
 
 def parse_mule_file(path: str, project: Optional[str] = None, *, schema_version: str = "1.0.0") -> SchemaDict:
-    """Parse a Mule XML file located at *path* and return the schema dictionary."""
+    """Parse a Mule XML file located at *path* into the schema dictionary."""
     with open(path, "r", encoding="utf-8") as handle:
         content = handle.read()
     project_name = project or infer_project_name(path)
@@ -47,11 +45,8 @@ def parse_mule_file(path: str, project: Optional[str] = None, *, schema_version:
 
 def parse_mule_xml(xml_content: str, project: str, *, schema_version: str = "1.0.0") -> SchemaDict:
     """Parse Mule XML *xml_content* and return a dictionary matching the schema."""
-    try:
-        namespace_map = collect_namespaces(xml_content)
-        tree = ET.ElementTree(ET.fromstring(xml_content))
-    except ET.ParseError as exc:
-        raise ValueError(format_xml_parse_error(exc)) from exc
+    namespace_map = collect_namespaces(xml_content)
+    tree = ET.ElementTree(ET.fromstring(xml_content))
     root = tree.getroot()
 
     assumptions: List[str] = []
@@ -91,7 +86,7 @@ def parse_mule_xml(xml_content: str, project: str, *, schema_version: str = "1.0
 
 
 def infer_project_name(path: str) -> str:
-    """Return a fallback project name derived from the file *path*."""
+    """Return a fallback project name based on the file path."""
     parts = path.replace("\\", "/").rstrip("/").split("/")
     if parts:
         return parts[-1].rsplit(".", 1)[0]
@@ -99,7 +94,7 @@ def infer_project_name(path: str) -> str:
 
 
 def collect_namespaces(xml_content: str) -> Dict[str, str]:
-    """Collect a namespace URI to prefix mapping from *xml_content*."""
+    """Collect namespace URI to prefix mapping from the XML content."""
     namespace_map: Dict[str, str] = {}
     for event, data in ET.iterparse(StringIO(xml_content), events=("start-ns",)):
         prefix, uri = data
@@ -108,19 +103,7 @@ def collect_namespaces(xml_content: str) -> Dict[str, str]:
     return namespace_map
 
 
-def format_xml_parse_error(exc: ET.ParseError) -> str:
-    """Return a readable description for an :class:`ET.ParseError`."""
-
-    line, column = exc.position
-    message = f"{exc.msg} (line {line}, column {column})"
-    if "unbound prefix" in exc.msg.lower():
-        message += \
-            ". Ensure the Mule XML includes the namespace declarations on the root <mule> element."
-    return message
-
-
 def parse_flow(elem: ET.Element, lookup: NodeLookup, namespace_map: Dict[str, str]) -> SchemaDict:
-    """Convert a `<flow>` element into the schema-compliant dictionary."""
     name = elem.attrib.get("name", "")
     flow_id = lookup.flows.get(name, f"flow://{name}")
     processors: List[SchemaDict] = []
@@ -156,7 +139,6 @@ def parse_flow(elem: ET.Element, lookup: NodeLookup, namespace_map: Dict[str, st
 
 
 def parse_subflow(elem: ET.Element, lookup: NodeLookup, namespace_map: Dict[str, str]) -> SchemaDict:
-    """Convert a `<sub-flow>` element into the schema-compliant dictionary."""
     name = elem.attrib.get("name", "")
     subflow_id = lookup.subflows.get(name, f"subflow://{name}")
     processors: List[SchemaDict] = []
@@ -182,10 +164,7 @@ def parse_subflow(elem: ET.Element, lookup: NodeLookup, namespace_map: Dict[str,
     return subflow_dict
 
 
-def parse_processor(
-    idx: int, elem: ET.Element, lookup: NodeLookup, namespace_map: Dict[str, str]
-) -> ProcessorParseResult:
-    """Normalize a processor element and derive follow-up edges."""
+def parse_processor(idx: int, elem: ET.Element, lookup: NodeLookup, namespace_map: Dict[str, str]) -> ProcessorParseResult:
     processor: SchemaDict = {
         "idx": idx,
         "type": qualified_name(elem.tag, namespace_map),
@@ -217,7 +196,6 @@ def parse_processor(
 def build_attributes(
     attributes: Dict[str, str], namespace_map: Dict[str, str], *, exclude_keys: Iterable[str]
 ) -> Dict[str, str]:
-    """Return a filtered attribute dictionary with fully-qualified keys."""
     result: Dict[str, str] = {}
     excluded = set(exclude_keys)
     for key, value in attributes.items():
@@ -230,7 +208,6 @@ def build_attributes(
 def extract_branches(
     elem: ET.Element, lookup: NodeLookup, namespace_map: Dict[str, str]
 ) -> Tuple[List[SchemaDict], List[SchemaDict]]:
-    """Collect router branch metadata and corresponding edges for *elem*."""
     local = local_name(elem.tag)
     branches: List[SchemaDict] = []
     edges: List[SchemaDict] = []
@@ -279,7 +256,6 @@ def extract_branches(
 
 
 def collect_branch_targets(elem: ET.Element, lookup: NodeLookup) -> List[str]:
-    """Gather all flow-ref targets reachable from *elem*."""
     targets: List[str] = []
     for candidate in elem.iter():
         if local_name(candidate.tag) == "flow-ref":
@@ -290,7 +266,6 @@ def collect_branch_targets(elem: ET.Element, lookup: NodeLookup) -> List[str]:
 
 
 def extract_dataweave(elem: ET.Element, namespace_map: Dict[str, str]) -> Optional[SchemaDict]:
-    """Extract DataWeave metadata if *elem* contains scripts."""
     qname = qualified_name(elem.tag, namespace_map)
     if not qname.startswith("ee:") and local_name(elem.tag) not in {"transform", "transform-message"}:
         return None
@@ -328,10 +303,7 @@ def extract_dataweave(elem: ET.Element, namespace_map: Dict[str, str]) -> Option
     return dataweave
 
 
-def parse_error_handler(
-    elem: ET.Element, lookup: NodeLookup, namespace_map: Dict[str, str]
-) -> Optional[SchemaDict]:
-    """Normalize an `<error-handler>` block into schema structure."""
+def parse_error_handler(elem: ET.Element, lookup: NodeLookup, namespace_map: Dict[str, str]) -> Optional[SchemaDict]:
     on_error_entries: List[SchemaDict] = []
     for child in elem:
         local = local_name(child.tag)
@@ -366,7 +338,6 @@ def parse_error_handler(
 
 
 def parse_source(elem: ET.Element, namespace_map: Dict[str, str]) -> Optional[SchemaDict]:
-    """Return metadata for the first processor acting as the flow source."""
     if not list(elem):
         return None
     first = elem[0]
@@ -395,7 +366,6 @@ def parse_source(elem: ET.Element, namespace_map: Dict[str, str]) -> Optional[Sc
 
 
 def extract_transaction(attributes: Dict[str, str]) -> Optional[SchemaDict]:
-    """Translate transaction attributes into the schema representation."""
     trans_type = attributes.get("transactionType") or attributes.get("transaction")
     action = attributes.get("transactionAction")
     if not trans_type and not action:
@@ -418,7 +388,6 @@ def extract_transaction(attributes: Dict[str, str]) -> Optional[SchemaDict]:
 
 
 def derive_flags(processors: List[SchemaDict]) -> Optional[SchemaDict]:
-    """Infer helpful flow flags from the collected *processors*."""
     flags: SchemaDict = {}
     for processor in processors:
         attributes = processor.get("attributes", {})
@@ -435,7 +404,6 @@ def derive_flags(processors: List[SchemaDict]) -> Optional[SchemaDict]:
 
 
 def infer_location(elem: ET.Element) -> str:
-    """Provide a best-effort location hint for *elem*."""
     sourceline = getattr(elem, "sourceline", None)
     if sourceline:
         return f"line:{sourceline}"
@@ -446,7 +414,6 @@ def infer_location(elem: ET.Element) -> str:
 
 
 def qualified_name(tag: str, namespace_map: Dict[str, str]) -> str:
-    """Return the prefixed qualified name for *tag* given *namespace_map*."""
     if tag.startswith("{"):
         uri, local = tag[1:].split("}", 1)
         prefix = namespace_map.get(uri)
@@ -457,8 +424,6 @@ def qualified_name(tag: str, namespace_map: Dict[str, str]) -> str:
 
 
 def local_name(tag: str) -> str:
-    """Strip namespaces from *tag* and return its local component."""
-
     if tag.startswith("{"):
         return tag.split("}", 1)[1]
     return tag
