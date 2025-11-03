@@ -68,11 +68,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not input_path.exists():
         parser.error(f"Input file '{input_path}' does not exist.")
 
-    document = parse_mule_file(
-        str(input_path),
-        project=args.project,
-        schema_version=args.schema_version,
-    )
+    try:
+        document = parse_mule_file(
+            str(input_path),
+            project=args.project,
+            schema_version=args.schema_version,
+        )
+    except ValueError as exc:
+        parser.error(
+            f"Could not parse Mule configuration '{input_path}': {exc}"
+        )
 
     output_path = determine_output_path(input_path, args.out)
     dump_json(document, output_path, pretty=args.pretty)

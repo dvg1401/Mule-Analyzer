@@ -47,8 +47,11 @@ def parse_mule_file(path: str, project: Optional[str] = None, *, schema_version:
 
 def parse_mule_xml(xml_content: str, project: str, *, schema_version: str = "1.0.0") -> SchemaDict:
     """Parse Mule XML *xml_content* and return a dictionary matching the schema."""
-    namespace_map = collect_namespaces(xml_content)
-    tree = ET.ElementTree(ET.fromstring(xml_content))
+    try:
+        namespace_map = collect_namespaces(xml_content)
+        tree = ET.ElementTree(ET.fromstring(xml_content))
+    except ET.ParseError as exc:
+        raise ValueError(format_xml_parse_error(exc)) from exc
     root = tree.getroot()
 
     assumptions: List[str] = []
@@ -103,6 +106,17 @@ def collect_namespaces(xml_content: str) -> Dict[str, str]:
         # prefer first prefix that appears for a URI
         namespace_map.setdefault(uri, prefix)
     return namespace_map
+
+
+def format_xml_parse_error(exc: ET.ParseError) -> str:
+    """Return a readable description for an :class:`ET.ParseError`."""
+
+    line, column = exc.position
+    message = f"{exc.msg} (line {line}, column {column})"
+    if "unbound prefix" in exc.msg.lower():
+        message += \
+            ". Ensure the Mule XML includes the namespace declarations on the root <mule> element."
+    return message
 
 
 def parse_flow(elem: ET.Element, lookup: NodeLookup, namespace_map: Dict[str, str]) -> SchemaDict:
