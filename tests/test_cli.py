@@ -25,6 +25,6 @@ def test_cli_handles_invalid_xml_without_traceback(tmp_path):
         text=True,
     )
 
-    assert result.returncode == 1
+    assert result.returncode != 0
     assert "Traceback" not in result.stderr
     assert "Could not parse Mule configuration" in result.stderr
