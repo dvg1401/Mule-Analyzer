@@ -1,10 +1,5 @@
-"""Utilities for analyzing Mule application descriptors."""
+"""Mule Analyzer package."""
 
-from .parser import MuleAnalysis, MuleFlow, MuleProcessor, parse_mule_file
+from .parser import parse_mule_file, parse_mule_xml
 
-__all__ = [
-    "MuleAnalysis",
-    "MuleFlow",
-    "MuleProcessor",
-    "parse_mule_file",
-]
+__all__ = ["parse_mule_file", "parse_mule_xml"]

@@ -1,69 +1,79 @@
-"""Command line interface for the Mule Analyzer utility."""
-
+"""Command-line interface for the Mule Analyzer parser."""
 from __future__ import annotations
 
 import argparse
-import sys
+import json
 from pathlib import Path
-import xml.etree.ElementTree as ET
+from typing import Iterable, Optional, Sequence
 
-from .parser import MuleAnalysis, parse_mule_file
+from .parser import parse_mule_file
 
 
-def build_argument_parser() -> argparse.ArgumentParser:
-    """Create the argument parser for the CLI."""
-
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="mule-analyzer",
-        description="Analyze Mule application XML descriptors.",
+        description="Parse a Mule XML file and emit the graph JSON schema representation.",
     )
     parser.add_argument(
-        "mule_file",
-        type=Path,
-        help="Path to the Mule XML file that should be analyzed.",
+        "input",
+        help="Path to the Mule XML file to parse.",
+    )
+    parser.add_argument(
+        "--project",
+        help="Override the project name stored in the generated JSON.",
+    )
+    parser.add_argument(
+        "--schema-version",
+        default="1.0.0",
+        help="Schema version to record in the output JSON (default: 1.0.0).",
+    )
+    parser.add_argument(
+        "--out",
+        help="Optional path for the generated JSON file. Defaults to replacing the input extension with .json.",
+    )
+    parser.add_argument(
+        "--pretty",
+        action="store_true",
+        help="Pretty-print the JSON output with indentation.",
     )
     return parser
 
 
-def format_analysis(analysis: MuleAnalysis) -> str:
-    """Render a textual representation of the analysis result."""
+def determine_output_path(input_path: Path, explicit: Optional[str]) -> Path:
+    if explicit:
+        return Path(explicit)
+    if input_path.suffix:
+        return input_path.with_suffix(".json")
+    return input_path.with_name(f"{input_path.name}.json")
 
-    lines: list[str] = [f"File: {analysis.path}", "Flows:"]
-    if not analysis.flows:
-        lines.append("  (no flows found)")
-    for flow in analysis.flows:
-        lines.append(f"  - {flow.name}")
-        if flow.processors:
-            for processor in flow.processors:
-                lines.append(f"      * {processor.tag}")
+
+def dump_json(document: dict, destination: Path, *, pretty: bool) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("w", encoding="utf-8") as handle:
+        if pretty:
+            json.dump(document, handle, indent=2, ensure_ascii=False)
         else:
-            lines.append("      (no processors)")
-    return "\n".join(lines)
+            json.dump(document, handle, ensure_ascii=False, separators=(",", ":"))
+        handle.write("\n")
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Entry point for the command line tool."""
-
-    parser = build_argument_parser()
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
 
-    try:
-        analysis = parse_mule_file(args.mule_file)
-    except FileNotFoundError:
-        sys.stderr.write(
-            f"Error: The file '{args.mule_file}' does not exist.\n"
-        )
-        return 1
-    except (ET.ParseError, ValueError) as exc:
-        sys.stderr.write(
-            "Error: Could not parse Mule configuration "
-            f"'{args.mule_file}': {exc}\n"
-        )
-        return 1
+    input_path = Path(args.input)
+    if not input_path.exists():
+        parser.error(f"Input file '{input_path}' does not exist.")
 
-    print(format_analysis(analysis))
+    document = parse_mule_file(
+        str(input_path),
+        project=args.project,
+        schema_version=args.schema_version,
+    )
+
+    output_path = determine_output_path(input_path, args.out)
+    dump_json(document, output_path, pretty=args.pretty)
+    print(f"Generated JSON written to {output_path}")
     return 0
 
 
-if __name__ == "__main__":  # pragma: no cover - CLI entry point
-    sys.exit(main())
+__all__: Iterable[str] = ["main"]

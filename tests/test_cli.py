@@ -1,30 +1,44 @@
-"""Tests for the Mule Analyzer CLI."""
-
-from __future__ import annotations
-
-import subprocess
-import sys
+import json
+from pathlib import Path
 
 
-def test_cli_handles_invalid_xml_without_traceback(tmp_path):
-    """The CLI should exit gracefully when the XML cannot be parsed."""
+from mule_analyzer.cli import main as cli_main
+from tests.test_parser_basic import SAMPLE_XML
 
-    mule_file = tmp_path / "invalid.xml"
-    mule_file.write_text(
-        """
-        <mule:root>
-            <mule:flow name="broken-flow" />
-        </mule:root>
-        """.strip(),
-        encoding="utf-8",
-    )
 
-    result = subprocess.run(
-        [sys.executable, "-m", "mule_analyzer.cli", str(mule_file)],
-        capture_output=True,
-        text=True,
-    )
+def test_cli_generates_json(tmp_path, capsys):
+    xml_path = tmp_path / "example.xml"
+    xml_path.write_text(SAMPLE_XML, encoding="utf-8")
+    output_path = tmp_path / "result.json"
 
-    assert result.returncode != 0
-    assert "Traceback" not in result.stderr
-    assert "Could not parse Mule configuration" in result.stderr
+    exit_code = cli_main([str(xml_path), "--project", "CliProject", "--out", str(output_path), "--pretty"])
+
+    assert exit_code == 0
+    assert output_path.exists()
+
+    captured = capsys.readouterr()
+    assert str(output_path) in captured.out
+
+    data = json.loads(output_path.read_text(encoding="utf-8"))
+    assert data["project"] == "CliProject"
+    assert data["flows"]
+
+
+def test_cli_default_output_name(tmp_path, capsys):
+    xml_path = tmp_path / "router.mule.xml"
+    xml_path.write_text(SAMPLE_XML, encoding="utf-8")
+
+    exit_code = cli_main([str(xml_path), "--project", "DefaultNameProject"])
+
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    output_line = captured.out.strip().splitlines()[-1]
+    generated_path = output_line.rsplit(" ", 1)[-1]
+    json_path = Path(generated_path)
+
+    assert json_path.exists()
+    assert json_path.name == "router.mule.json"
+
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    assert data["project"] == "DefaultNameProject"
